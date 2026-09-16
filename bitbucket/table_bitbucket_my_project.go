@@ -113,7 +113,7 @@ func bitbucketProjectColumns() []*plugin.Column {
 
 func tableBitbucketMyProjectList(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (interface{}, error) {
 	plugin.Logger(ctx).Trace("tableBitbucketMyProjectList")
-	workspace := h.Item.(bitbucket.Workspace)
+	workspace := h.Item.(WorkspaceRow)
 	client := connect(ctx, d)
 
 	urlStr := client.GetApiBaseURL() + fmt.Sprintf("/workspaces/%s/projects", workspace.Slug)

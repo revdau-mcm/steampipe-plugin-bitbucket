@@ -2,11 +2,27 @@ package bitbucket
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
 
 	"github.com/turbot/steampipe-plugin-sdk/v5/grpc/proto"
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin"
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin/transform"
 )
+
+// WorkspaceRow is our unified workspace struct returned to Steampipe.
+type WorkspaceRow struct {
+	Name          string
+	Slug          string
+	UUID          string
+	Is_Private    bool
+	Type          string
+	WorkspaceType string // "USER_SPECIFIC" or "GLOBAL"
+}
 
 func tableBitbucketMyWorkspace(_ context.Context) *plugin.Table {
 	return &plugin.Table{
@@ -34,7 +50,7 @@ func tableBitbucketMyWorkspace(_ context.Context) *plugin.Table {
 			},
 			{
 				Name:        "is_private",
-				Description: "Indicates whether the workspace is publicly accessible, or whether it is private to the members and consequently only visible to members. Note that private workspaces cannot contain public repositories.",
+				Description: "Indicates whether the workspace is publicly accessible, or whether it is private to the members.",
 				Type:        proto.ColumnType_BOOL,
 				Transform:   transform.FromField("Is_Private"),
 			},
@@ -43,7 +59,11 @@ func tableBitbucketMyWorkspace(_ context.Context) *plugin.Table {
 				Description: "Type of the Bitbucket resource.",
 				Type:        proto.ColumnType_STRING,
 			},
-
+			{
+				Name:        "workspace_type",
+				Description: "USER_SPECIFIC (found via /user/workspaces) or GLOBAL (found via /workspaces).",
+				Type:        proto.ColumnType_STRING,
+			},
 			// Standard columns
 			{
 				Name:        "title",
@@ -55,23 +75,139 @@ func tableBitbucketMyWorkspace(_ context.Context) *plugin.Table {
 	}
 }
 
+// tableBitbucketMyWorkspaceList fetches workspaces from BOTH Bitbucket endpoints:
+//  1. /user/workspaces  -> works with API Tokens (user-scoped)  -> labeled USER_SPECIFIC
+//  2. /workspaces       -> works with admin credentials          -> labeled GLOBAL
+//
+// 404/403 from either endpoint is silently ignored so both token types work.
 func tableBitbucketMyWorkspaceList(ctx context.Context, d *plugin.QueryData, _ *plugin.HydrateData) (interface{}, error) {
-	plugin.Logger(ctx).Trace("tableBitbucketWorkspaceList")
-	client := connect(ctx, d)
+	plugin.Logger(ctx).Trace("tableBitbucketMyWorkspaceList")
 
-	resp, err := client.Workspaces.List()
-	if err != nil {
-		return nil, err
+	cfg := GetConfig(d.Connection)
+
+	baseURL := "https://api.bitbucket.org/2.0"
+	if cfg.BaseUrl != nil && *cfg.BaseUrl != "" {
+		baseURL = strings.TrimRight(*cfg.BaseUrl, "/")
 	}
 
-	for _, workspace := range resp.Workspaces {
-		d.StreamListItem(ctx, workspace)
+	// Build auth header: prefer API Token (Bearer), fall back to Basic Auth
+	authHeader := ""
+	if cfg.Token != nil && *cfg.Token != "" {
+		authHeader = "Bearer " + *cfg.Token
+	} else if cfg.Username != nil && cfg.Password != nil {
+		raw := *cfg.Username + ":" + *cfg.Password
+		authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(raw))
+	}
 
-		// Context can be cancelled due to manual cancellation or the limit has been hit
+	seen := map[string]bool{}
+
+	// ── 1. User workspaces (/user/workspaces) — works for API Tokens ──────
+	userWS, err := fetchWorkspaces(ctx, baseURL+"/user/workspaces?pagelen=100", authHeader)
+	if err != nil {
+		plugin.Logger(ctx).Warn("tableBitbucketMyWorkspaceList: /user/workspaces error (non-fatal)", "err", err)
+	}
+	for _, ws := range userWS {
+		if seen[ws.Slug] {
+			continue
+		}
+		seen[ws.Slug] = true
+		ws.WorkspaceType = "USER_SPECIFIC"
+		d.StreamListItem(ctx, ws)
+		if d.RowsRemaining(ctx) == 0 {
+			return nil, nil
+		}
+	}
+
+	// ── 2. Global workspaces (/workspaces) — works for admin credentials ──
+	globalWS, err := fetchWorkspaces(ctx, baseURL+"/workspaces?pagelen=100", authHeader)
+	if err != nil {
+		plugin.Logger(ctx).Warn("tableBitbucketMyWorkspaceList: /workspaces error (non-fatal)", "err", err)
+	}
+	for _, ws := range globalWS {
+		if seen[ws.Slug] {
+			continue // already emitted above
+		}
+		seen[ws.Slug] = true
+		ws.WorkspaceType = "GLOBAL"
+		d.StreamListItem(ctx, ws)
 		if d.RowsRemaining(ctx) == 0 {
 			return nil, nil
 		}
 	}
 
 	return nil, nil
+}
+
+// fetchWorkspaces calls a single Bitbucket workspace listing URL and returns the rows.
+// 401/403/404 are returned as errors; other non-200 are also errors.
+func fetchWorkspaces(ctx context.Context, url, authHeader string) ([]WorkspaceRow, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("building request for %s: %w", url, err)
+	}
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("executing request for %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 {
+		return nil, fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("unexpected HTTP %d from %s: %s", resp.StatusCode, url, string(body))
+	}
+
+	// /user/workspaces returns: { "values": [ { "workspace": { name, slug, uuid, type }, "is_private": ... } ] }
+	// /workspaces returns:      { "values": [ { "name": ..., "slug": ..., "uuid": ..., "type": ... } ] }
+	var result struct {
+		Values []struct {
+			Name      string `json:"name"`
+			Slug      string `json:"slug"`
+			UUID      string `json:"uuid"`
+			IsPrivate bool   `json:"is_private"`
+			Type      string `json:"type"`
+			Workspace *struct {
+				Name string `json:"name"`
+				Slug string `json:"slug"`
+				UUID string `json:"uuid"`
+				Type string `json:"type"`
+			} `json:"workspace"`
+		} `json:"values"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parsing response from %s: %w", url, err)
+	}
+
+	var rows []WorkspaceRow
+	for _, v := range result.Values {
+		if v.Workspace != nil {
+			// Nested structure from /user/workspaces
+			rows = append(rows, WorkspaceRow{
+				Name:       v.Workspace.Name,
+				Slug:       v.Workspace.Slug,
+				UUID:       v.Workspace.UUID,
+				Is_Private: v.IsPrivate,
+				Type:       v.Workspace.Type,
+			})
+		} else {
+			// Flat structure from /workspaces
+			rows = append(rows, WorkspaceRow{
+				Name:       v.Name,
+				Slug:       v.Slug,
+				UUID:       v.UUID,
+				Is_Private: v.IsPrivate,
+				Type:       v.Type,
+			})
+		}
+	}
+	return rows, nil
 }

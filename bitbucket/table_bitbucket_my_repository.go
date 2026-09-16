@@ -20,7 +20,7 @@ func tableBitbucketMyRepository(_ context.Context) *plugin.Table {
 }
 
 func tableBitbucketMyRepositoryList(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (interface{}, error) {
-	owner := h.Item.(bitbucket.Workspace).Slug
+	owner := h.Item.(WorkspaceRow).Slug
 	client := connect(ctx, d)
 
 	repos, err := client.Repositories.ListForAccount(&bitbucket.RepositoriesOptions{

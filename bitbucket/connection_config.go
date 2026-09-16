@@ -5,6 +5,7 @@ import (
 )
 
 type bitbucketConfig struct {
+	Token    *string `hcl:"token"`
 	Username *string `hcl:"username"`
 	Password *string `hcl:"password"`
 	BaseUrl  *string `hcl:"base_url"`
