@@ -114,7 +114,7 @@ func tableBitbucketBranchRestrictionsList(ctx context.Context, d *plugin.QueryDa
 	response, err := client.Repositories.BranchRestrictions.Gets(opts)
 	if err != nil {
 		if isForbiddenError(err) {
-			return nil, errors.New("Admin access to the repository is required in order to list the branch restrictions.")
+			return nil, errors.New("admin access to the repository is required in order to list the branch restrictions")
 		}
 		if isNotFoundError(err) {
 			return nil, nil
