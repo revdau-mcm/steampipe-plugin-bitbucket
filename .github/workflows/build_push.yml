@@ -1,0 +1,84 @@
+name: Build and Push steampipe-plugin-bitbucket
+
+on:
+  push:
+    branches:
+      - develop
+      - qa
+      - main
+      - "release/**"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to build"
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    runs-on: self-hosted
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch || github.ref_name }}
+
+      - name: Calculate Version
+        run: |
+          BASE_VERSION=$(cat version.txt | tr -d '\r\n' | xargs)
+          BRANCH="${GITHUB_REF_NAME}"
+          RUN_NUMBER="${{ github.run_number }}"
+
+          if [ "$BRANCH" = "main" ] || [[ "$BRANCH" == release/* ]]; then
+            STABLE_VERSION="$BASE_VERSION"
+          elif [ "$BRANCH" = "qa" ]; then
+            STABLE_VERSION="$BASE_VERSION-qa"
+          else
+            STABLE_VERSION="$BASE_VERSION-develop"
+          fi
+
+          HISTORY_VERSION="$STABLE_VERSION-$RUN_NUMBER"
+
+          echo "STABLE_VERSION=$STABLE_VERSION" >> $GITHUB_ENV
+          echo "HISTORY_VERSION=$HISTORY_VERSION" >> $GITHUB_ENV
+
+          echo "Stable Version : $STABLE_VERSION"
+          echo "History Version: $HISTORY_VERSION"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.0"
+          cache: true
+
+      - name: Build Static Linux Binary
+        run: |
+          echo "Building static Linux AMD64 binary for steampipe-plugin-bitbucket ($STABLE_VERSION)..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags "netgo" -ldflags="-s -w" -o steampipe-plugin-bitbucket.plugin *.go
+          ls -lh steampipe-plugin-bitbucket.plugin
+
+      - name: Publish to Sonatype Nexus (steampipe-plugins)
+        env:
+          NEXUS_USER: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASS: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_BASE: ${{ vars.NEXUS_RAW_URL || vars.NEXUS_URL || 'http://registry.mcm.revdau.ai:8080' }}
+        run: |
+          CLEAN_BASE=$(echo "$NEXUS_BASE" | sed -e 's|/*$||')
+          UPLOAD_URL="${CLEAN_BASE}/service/rest/v1/components?repository=steampipe-plugins"
+
+          echo "Publishing steampipe-plugin-bitbucket.plugin ($STABLE_VERSION) to $UPLOAD_URL..."
+          curl -sS --fail-with-body \
+            -u "${NEXUS_USER}:${NEXUS_PASS}" \
+            -X POST "$UPLOAD_URL" \
+            -F "raw.directory=bitbucket/${STABLE_VERSION}" \
+            -F "raw.asset1=@steampipe-plugin-bitbucket.plugin" \
+            -F "raw.asset1.filename=steampipe-plugin-bitbucket.plugin"
+
+          echo "✅ Published successfully to steampipe-plugins repository at bitbucket/${STABLE_VERSION}/steampipe-plugin-bitbucket.plugin"

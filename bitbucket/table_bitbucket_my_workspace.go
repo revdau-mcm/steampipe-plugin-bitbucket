@@ -154,7 +154,9 @@ func fetchWorkspaces(ctx context.Context, url, authHeader string) ([]WorkspaceRo
 	if err != nil {
 		return nil, fmt.Errorf("executing request for %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	body, _ := io.ReadAll(resp.Body)
 
