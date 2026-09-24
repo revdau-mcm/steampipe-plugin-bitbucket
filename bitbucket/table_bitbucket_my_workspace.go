@@ -64,6 +64,16 @@ func tableBitbucketMyWorkspace(_ context.Context) *plugin.Table {
 				Description: "USER_SPECIFIC (found via /user/workspaces) or GLOBAL (found via /workspaces).",
 				Type:        proto.ColumnType_STRING,
 			},
+			{
+				Name:        "created_on",
+				Description: "Timestamp when workspace was created.",
+				Type:        proto.ColumnType_TIMESTAMP,
+			},
+			{
+				Name:        "updated_on",
+				Description: "Timestamp when workspace was updated.",
+				Type:        proto.ColumnType_TIMESTAMP,
+			},
 			// Standard columns
 			{
 				Name:        "title",
