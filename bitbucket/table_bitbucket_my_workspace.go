@@ -113,6 +113,29 @@ func tableBitbucketMyWorkspaceList(ctx context.Context, d *plugin.QueryData, _ *
 
 	seen := map[string]bool{}
 
+	if len(cfg.Workspaces) > 0 {
+		var explicitErr error
+		for _, slug := range cfg.Workspaces {
+			url := baseURL + "/workspaces/" + slug
+			ws, err := fetchSingleWorkspace(ctx, url, authHeader)
+			if err != nil {
+				plugin.Logger(ctx).Warn("tableBitbucketMyWorkspaceList: fetch explicit workspace error", "slug", slug, "err", err)
+				explicitErr = err
+				continue
+			}
+			ws.WorkspaceType = "EXPLICIT"
+			seen[ws.Slug] = true
+			d.StreamListItem(ctx, *ws)
+			if d.RowsRemaining(ctx) == 0 {
+				return nil, nil
+			}
+		}
+		if len(seen) == 0 && explicitErr != nil {
+			return nil, fmt.Errorf("failed to fetch explicit workspaces: %v", explicitErr)
+		}
+		return nil, nil
+	}
+
 	// ── 1. User workspaces (/user/workspaces) — works for API Tokens ──────
 	userWS, errUser := fetchWorkspaces(ctx, baseURL+"/user/workspaces?pagelen=100", authHeader)
 	if errUser != nil {
@@ -243,4 +266,53 @@ func fetchWorkspaces(ctx context.Context, url, authHeader string) ([]WorkspaceRo
 		}
 	}
 	return rows, nil
+}
+
+func fetchSingleWorkspace(ctx context.Context, url, authHeader string) (*WorkspaceRow, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("building request for %s: %w", url, err)
+	}
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("executing request for %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 {
+		return nil, fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("unexpected HTTP %d from %s: %s", resp.StatusCode, url, string(body))
+	}
+
+	var v struct {
+		Name      string `json:"name"`
+		Slug      string `json:"slug"`
+		UUID      string `json:"uuid"`
+		IsPrivate bool   `json:"is_private"`
+		Type      string `json:"type"`
+		CreatedOn interface{} `json:"created_on"`
+		UpdatedOn interface{} `json:"updated_on"`
+	}
+
+	if err := json.Unmarshal(body, &v); err != nil {
+		return nil, fmt.Errorf("parsing response from %s: %w", url, err)
+	}
+
+	return &WorkspaceRow{
+		Name:       v.Name,
+		Slug:       v.Slug,
+		UUID:       v.UUID,
+		Is_Private: v.IsPrivate,
+		Type:       v.Type,
+		CreatedOn:  v.CreatedOn,
+		UpdatedOn:  v.UpdatedOn,
+	}, nil
 }
