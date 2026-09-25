@@ -137,7 +137,7 @@ func makeBitbucketRequest(ctx context.Context, d *plugin.QueryData, url string) 
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 	return resp, nil
