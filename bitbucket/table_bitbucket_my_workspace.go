@@ -114,9 +114,9 @@ func tableBitbucketMyWorkspaceList(ctx context.Context, d *plugin.QueryData, _ *
 	seen := map[string]bool{}
 
 	// ── 1. User workspaces (/user/workspaces) — works for API Tokens ──────
-	userWS, err := fetchWorkspaces(ctx, baseURL+"/user/workspaces?pagelen=100", authHeader)
-	if err != nil {
-		plugin.Logger(ctx).Warn("tableBitbucketMyWorkspaceList: /user/workspaces error (non-fatal)", "err", err)
+	userWS, errUser := fetchWorkspaces(ctx, baseURL+"/user/workspaces?pagelen=100", authHeader)
+	if errUser != nil {
+		plugin.Logger(ctx).Warn("tableBitbucketMyWorkspaceList: /user/workspaces error", "err", errUser)
 	}
 	for _, ws := range userWS {
 		if seen[ws.Slug] {
@@ -131,9 +131,9 @@ func tableBitbucketMyWorkspaceList(ctx context.Context, d *plugin.QueryData, _ *
 	}
 
 	// ── 2. Global workspaces (/workspaces) — works for admin credentials ──
-	globalWS, err := fetchWorkspaces(ctx, baseURL+"/workspaces?pagelen=100", authHeader)
-	if err != nil {
-		plugin.Logger(ctx).Warn("tableBitbucketMyWorkspaceList: /workspaces error (non-fatal)", "err", err)
+	globalWS, errGlobal := fetchWorkspaces(ctx, baseURL+"/workspaces?pagelen=100", authHeader)
+	if errGlobal != nil {
+		plugin.Logger(ctx).Warn("tableBitbucketMyWorkspaceList: /workspaces error", "err", errGlobal)
 	}
 	for _, ws := range globalWS {
 		if seen[ws.Slug] {
@@ -144,6 +144,17 @@ func tableBitbucketMyWorkspaceList(ctx context.Context, d *plugin.QueryData, _ *
 		d.StreamListItem(ctx, ws)
 		if d.RowsRemaining(ctx) == 0 {
 			return nil, nil
+		}
+	}
+
+	// If BOTH endpoints failed and we got 0 workspaces, return the errors so it doesn't fail silently.
+	if len(userWS) == 0 && len(globalWS) == 0 {
+		if errUser != nil && errGlobal != nil {
+			return nil, fmt.Errorf("failed to fetch workspaces: user endpoint error: %v | global endpoint error: %v", errUser, errGlobal)
+		} else if errUser != nil {
+			return nil, fmt.Errorf("failed to fetch user workspaces: %v", errUser)
+		} else if errGlobal != nil {
+			return nil, fmt.Errorf("failed to fetch global workspaces: %v", errGlobal)
 		}
 	}
 
