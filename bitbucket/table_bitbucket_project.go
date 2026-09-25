@@ -44,6 +44,7 @@ func tableBitbucketProjectList(ctx context.Context, d *plugin.QueryData, h *plug
 		}
 		projectList := new(ProjectList)
 		err = decodeResponse(resp, projectList)
+		resp.Body.Close()
 		if err != nil {
 			return nil, err
 		}
@@ -87,6 +88,7 @@ func tableBitbucketProjectGet(ctx context.Context, d *plugin.QueryData, h *plugi
 	if resp == nil {
 		return nil, nil
 	}
+	defer resp.Body.Close()
 
 	project := new(Project)
 	err = decodeResponse(resp, project)

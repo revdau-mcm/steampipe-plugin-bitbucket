@@ -126,6 +126,7 @@ func tableBitbucketMyProjectList(ctx context.Context, d *plugin.QueryData, h *pl
 		}
 		projectList := new(ProjectList)
 		err = decodeResponse(resp, projectList)
+		resp.Body.Close()
 		if err != nil {
 			return nil, err
 		}
