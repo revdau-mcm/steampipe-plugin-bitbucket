@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - develop
+      - test-branch
+      - test-branch-01
       - qa
       - main
       - "release/**"
@@ -40,6 +42,8 @@ jobs:
             STABLE_VERSION="$BASE_VERSION"
           elif [ "$BRANCH" = "qa" ]; then
             STABLE_VERSION="$BASE_VERSION-qa"
+          elif [ "$BRANCH" = "develop" ] || [ "$BRANCH" = "test-branch" ] || [ "$BRANCH" = "test-branch-01" ]; then
+            STABLE_VERSION="$BASE_VERSION-develop"
           else
             STABLE_VERSION="$BASE_VERSION-develop"
           fi
