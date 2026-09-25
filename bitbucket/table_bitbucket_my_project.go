@@ -3,8 +3,6 @@ package bitbucket
 import (
 	"context"
 	"fmt"
-	"time"
-
 	"github.com/ktrysmt/go-bitbucket"
 	"github.com/turbot/steampipe-plugin-sdk/v5/grpc/proto"
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin"
@@ -119,12 +117,16 @@ func tableBitbucketMyProjectList(ctx context.Context, d *plugin.QueryData, h *pl
 	urlStr := client.GetApiBaseURL() + fmt.Sprintf("/workspaces/%s/projects", workspace.Slug)
 
 	for {
-		resp, err := client.HttpClient.Get(urlStr)
+		resp, err := makeBitbucketRequest(ctx, d, urlStr)
 		if err != nil {
+			if isNotFoundError(err) {
+				return nil, nil
+			}
 			return nil, err
 		}
 		projectList := new(ProjectList)
 		err = decodeResponse(resp, projectList)
+		_ = resp.Body.Close()
 		if err != nil {
 			return nil, err
 		}
@@ -154,7 +156,7 @@ type ProjectList struct {
 }
 
 type Project struct {
-	Created     *time.Time             `json:"created_on"`
+	Created     interface{}             `json:"created_on"`
 	Description string                 `json:"description"`
 	IsPrivate   bool                   `json:"is_private"`
 	Key         string                 `json:"key"`
@@ -163,6 +165,6 @@ type Project struct {
 	Owner       map[string]interface{} `json:"owner"`
 	Type        string                 `json:"type"`
 	UUID        string                 `json:"uuid"`
-	Updated     *time.Time             `json:"updated_on"`
+	Updated     interface{}             `json:"updated_on"`
 	Workspace   bitbucket.Workspace    `json:"workspace"`
 }

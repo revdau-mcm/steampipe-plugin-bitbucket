@@ -22,6 +22,8 @@ type WorkspaceRow struct {
 	Is_Private    bool
 	Type          string
 	WorkspaceType string // "USER_SPECIFIC" or "GLOBAL"
+	CreatedOn     interface{}
+	UpdatedOn     interface{}
 }
 
 func tableBitbucketMyWorkspace(_ context.Context) *plugin.Table {
@@ -186,11 +188,15 @@ func fetchWorkspaces(ctx context.Context, url, authHeader string) ([]WorkspaceRo
 			UUID      string `json:"uuid"`
 			IsPrivate bool   `json:"is_private"`
 			Type      string `json:"type"`
+			CreatedOn interface{} `json:"created_on"`
+			UpdatedOn interface{} `json:"updated_on"`
 			Workspace *struct {
-				Name string `json:"name"`
-				Slug string `json:"slug"`
-				UUID string `json:"uuid"`
-				Type string `json:"type"`
+				Name      string `json:"name"`
+				Slug      string `json:"slug"`
+				UUID      string `json:"uuid"`
+				Type      string `json:"type"`
+				CreatedOn interface{} `json:"created_on"`
+				UpdatedOn interface{} `json:"updated_on"`
 			} `json:"workspace"`
 		} `json:"values"`
 	}
@@ -209,6 +215,8 @@ func fetchWorkspaces(ctx context.Context, url, authHeader string) ([]WorkspaceRo
 				UUID:       v.Workspace.UUID,
 				Is_Private: v.IsPrivate,
 				Type:       v.Workspace.Type,
+				CreatedOn:  v.Workspace.CreatedOn,
+				UpdatedOn:  v.Workspace.UpdatedOn,
 			})
 		} else {
 			// Flat structure from /workspaces
@@ -218,6 +226,8 @@ func fetchWorkspaces(ctx context.Context, url, authHeader string) ([]WorkspaceRo
 				UUID:       v.UUID,
 				Is_Private: v.IsPrivate,
 				Type:       v.Type,
+				CreatedOn:  v.CreatedOn,
+				UpdatedOn:  v.UpdatedOn,
 			})
 		}
 	}

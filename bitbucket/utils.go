@@ -2,7 +2,9 @@ package bitbucket
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -112,3 +114,32 @@ type ListResponse struct {
 	Next     string `json:"next,omitempty"`
 	Previous string `json:"previous,omitempty"`
 }
+
+// makeBitbucketRequest builds and executes an authenticated HTTP request.
+func makeBitbucketRequest(ctx context.Context, d *plugin.QueryData, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := GetConfig(d.Connection)
+	if cfg.Token != nil && *cfg.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+*cfg.Token)
+	} else if cfg.Username != nil && cfg.Password != nil {
+		raw := *cfg.Username + ":" + *cfg.Password
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(raw)))
+	}
+	req.Header.Set("Accept", "application/json")
+
+	client := connect(ctx, d)
+	resp, err := client.HttpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return resp, nil
+}
+
