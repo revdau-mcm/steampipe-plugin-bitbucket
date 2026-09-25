@@ -217,18 +217,18 @@ func fetchWorkspaces(ctx context.Context, url, authHeader string) ([]WorkspaceRo
 	// /workspaces returns:      { "values": [ { "name": ..., "slug": ..., "uuid": ..., "type": ... } ] }
 	var result struct {
 		Values []struct {
-			Name      string `json:"name"`
-			Slug      string `json:"slug"`
-			UUID      string `json:"uuid"`
-			IsPrivate bool   `json:"is_private"`
-			Type      string `json:"type"`
+			Name      string      `json:"name"`
+			Slug      string      `json:"slug"`
+			UUID      string      `json:"uuid"`
+			IsPrivate bool        `json:"is_private"`
+			Type      string      `json:"type"`
 			CreatedOn interface{} `json:"created_on"`
 			UpdatedOn interface{} `json:"updated_on"`
 			Workspace *struct {
-				Name      string `json:"name"`
-				Slug      string `json:"slug"`
-				UUID      string `json:"uuid"`
-				Type      string `json:"type"`
+				Name      string      `json:"name"`
+				Slug      string      `json:"slug"`
+				UUID      string      `json:"uuid"`
+				Type      string      `json:"type"`
 				CreatedOn interface{} `json:"created_on"`
 				UpdatedOn interface{} `json:"updated_on"`
 			} `json:"workspace"`
@@ -293,11 +293,11 @@ func fetchSingleWorkspace(ctx context.Context, url, authHeader string) (*Workspa
 	}
 
 	var v struct {
-		Name      string `json:"name"`
-		Slug      string `json:"slug"`
-		UUID      string `json:"uuid"`
-		IsPrivate bool   `json:"is_private"`
-		Type      string `json:"type"`
+		Name      string      `json:"name"`
+		Slug      string      `json:"slug"`
+		UUID      string      `json:"uuid"`
+		IsPrivate bool        `json:"is_private"`
+		Type      string      `json:"type"`
 		CreatedOn interface{} `json:"created_on"`
 		UpdatedOn interface{} `json:"updated_on"`
 	}
