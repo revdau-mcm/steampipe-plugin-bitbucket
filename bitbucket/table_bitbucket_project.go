@@ -35,7 +35,7 @@ func tableBitbucketProjectList(ctx context.Context, d *plugin.QueryData, h *plug
 	urlStr := client.GetApiBaseURL() + fmt.Sprintf("/workspaces/%s/projects", workspace)
 
 	for {
-		resp, err := client.HttpClient.Get(urlStr)
+		resp, err := makeBitbucketRequest(ctx, d, urlStr)
 		if err != nil {
 			if isNotFoundError(err) {
 				return nil, nil
@@ -76,7 +76,7 @@ func tableBitbucketProjectGet(ctx context.Context, d *plugin.QueryData, h *plugi
 	client := connect(ctx, d)
 	urlStr := client.GetApiBaseURL() + fmt.Sprintf("/workspaces/%s/projects/%s", workspace, key)
 
-	resp, err := client.HttpClient.Get(urlStr)
+	resp, err := makeBitbucketRequest(ctx, d, urlStr)
 	if err != nil {
 		if isNotFoundError(err) {
 			return nil, nil
