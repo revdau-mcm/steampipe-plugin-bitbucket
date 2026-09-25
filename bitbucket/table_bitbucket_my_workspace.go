@@ -282,7 +282,9 @@ func fetchSingleWorkspace(ctx context.Context, url, authHeader string) (*Workspa
 	if err != nil {
 		return nil, fmt.Errorf("executing request for %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
