@@ -284,12 +284,15 @@ func fetchSingleWorkspace(ctx context.Context, url, authHeader string) (*Workspa
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response body from %s: %w", url, err)
+	}
 	if resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 {
-		return nil, fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
+		return nil, fmt.Errorf("http %d from %s", resp.StatusCode, url)
 	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("unexpected HTTP %d from %s: %s", resp.StatusCode, url, string(body))
+		return nil, fmt.Errorf("unexpected http %d from %s: %s", resp.StatusCode, url, string(body))
 	}
 
 	var v struct {
