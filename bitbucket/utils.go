@@ -44,7 +44,15 @@ func connect(_ context.Context, d *plugin.QueryData) *bitbucket.Client {
 
 	var client *bitbucket.Client
 	if token != "" {
-		client = bitbucket.NewOAuthbearerToken(token)
+		// Atlassian API tokens are NOT OAuth Bearer tokens.
+		// They must be sent as Basic Auth: username:api_token.
+		// If a username is supplied alongside the token, use Basic Auth.
+		// Otherwise fall back to Bearer (for true OAuth tokens / Bitbucket Server PATs).
+		if username != "" {
+			client = bitbucket.NewBasicAuth(username, token)
+		} else {
+			client = bitbucket.NewOAuthbearerToken(token)
+		}
 	} else {
 		if username == "" {
 			panic("'username' must be set in the connection configuration if 'token' is not set. Edit your connection configuration file and then restart Steampipe")
@@ -124,7 +132,14 @@ func makeBitbucketRequest(ctx context.Context, d *plugin.QueryData, url string) 
 
 	cfg := GetConfig(d.Connection)
 	if cfg.Token != nil && *cfg.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+*cfg.Token)
+		if cfg.Username != nil && *cfg.Username != "" {
+			// Atlassian API tokens must be used as Basic Auth: username:token
+			raw := *cfg.Username + ":" + *cfg.Token
+			req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(raw)))
+		} else {
+			// True OAuth Bearer token (Bitbucket Server PATs, etc.)
+			req.Header.Set("Authorization", "Bearer "+*cfg.Token)
+		}
 	} else if cfg.Username != nil && cfg.Password != nil {
 		raw := *cfg.Username + ":" + *cfg.Password
 		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(raw)))
