@@ -82,3 +82,44 @@ jobs:
             -F "raw.asset1.filename=steampipe-plugin-bitbucket.plugin"
 
           echo "✅ Published successfully to steampipe-plugins repository at bitbucket/${STABLE_VERSION}/steampipe-plugin-bitbucket.plugin"
+
+      - name: Run Go Tests with Coverage
+        continue-on-error: true
+        run: |
+          go test -v -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Set up JDK 21 for SonarScan
+        continue-on-error: true
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "corretto"
+
+      - name: Download and install SonarScanner
+        continue-on-error: true
+        run: |
+          curl -sSLo sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+          python3 -m zipfile -e sonar-scanner.zip .
+          chmod -R +x sonar-scanner-5.0.1.3006-linux/
+          echo "$PWD/sonar-scanner-5.0.1.3006-linux/bin" >> $GITHUB_PATH
+
+      - name: SonarQube Target Branch Scan
+        continue-on-error: true
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          TARGET_BRANCH="${{ github.event_name == 'workflow_dispatch' && inputs.branch || github.ref_name }}"
+          echo "Scanning target branch: $TARGET_BRANCH"
+
+          ./sonar-scanner-5.0.1.3006-linux/bin/sonar-scanner \
+            -Dsonar.projectKey=steampipe-plugin-bitbucket \
+            -Dsonar.projectName="Steampipe Plugin Bitbucket" \
+            -Dsonar.sources=. \
+            -Dsonar.tests=. \
+            -Dsonar.test.inclusions="**/*_test.go" \
+            -Dsonar.exclusions=".git/**,*.plugin" \
+            -Dsonar.go.coverage.reportPaths=coverage.out \
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.token=${{ secrets.SONAR_TOKEN }} \
+            -Dsonar.branch.name=$TARGET_BRANCH
