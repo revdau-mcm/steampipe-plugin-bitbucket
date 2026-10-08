@@ -2,6 +2,8 @@ package bitbucket
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/ktrysmt/go-bitbucket"
 	"github.com/turbot/steampipe-plugin-sdk/v5/plugin"
@@ -21,23 +23,50 @@ func tableBitbucketMyRepository(_ context.Context) *plugin.Table {
 
 func tableBitbucketMyRepositoryList(ctx context.Context, d *plugin.QueryData, h *plugin.HydrateData) (interface{}, error) {
 	owner := h.Item.(WorkspaceRow).Slug
-	client := connect(ctx, d)
+	cfg := GetConfig(d.Connection)
 
-	repos, err := client.Repositories.ListForAccount(&bitbucket.RepositoriesOptions{
-		Owner: owner,
-	})
-
-	if err != nil {
-		return nil, err
+	baseURL := "https://api.bitbucket.org/2.0"
+	if cfg.BaseUrl != nil && *cfg.BaseUrl != "" {
+		baseURL = strings.TrimRight(*cfg.BaseUrl, "/")
 	}
+	url := fmt.Sprintf("%s/repositories/%s?pagelen=100", baseURL, owner)
 
-	for _, repo := range repos.Items {
-		d.StreamListItem(ctx, repo)
+	for url != "" {
+		nextURL, err := func(currentURL string) (string, error) {
+			resp, err := makeBitbucketRequest(ctx, d, currentURL)
+			if err != nil {
+				return "", err
+			}
+			defer func() {
+				_ = resp.Body.Close()
+			}()
 
-		// Context can be cancelled due to manual cancellation or the limit has been hit
-		if d.RowsRemaining(ctx) == 0 {
+			var result struct {
+				Values []bitbucket.Repository `json:"values"`
+				Next   string                 `json:"next"`
+			}
+
+			if err := decodeResponse(resp, &result); err != nil {
+				return "", err
+			}
+
+			for _, repo := range result.Values {
+				d.StreamListItem(ctx, repo)
+				if d.RowsRemaining(ctx) == 0 {
+					return "", nil
+				}
+			}
+
+			return result.Next, nil
+		}(url)
+
+		if err != nil {
+			return nil, err
+		}
+		if nextURL == "" && d.RowsRemaining(ctx) == 0 {
 			return nil, nil
 		}
+		url = nextURL
 	}
 
 	return nil, nil
