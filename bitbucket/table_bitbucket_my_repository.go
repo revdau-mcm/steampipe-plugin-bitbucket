@@ -32,30 +32,41 @@ func tableBitbucketMyRepositoryList(ctx context.Context, d *plugin.QueryData, h 
 	url := fmt.Sprintf("%s/repositories/%s?pagelen=100", baseURL, owner)
 
 	for url != "" {
-		resp, err := makeBitbucketRequest(ctx, d, url)
+		nextURL, err := func(currentURL string) (string, error) {
+			resp, err := makeBitbucketRequest(ctx, d, currentURL)
+			if err != nil {
+				return "", err
+			}
+			defer func() {
+				_ = resp.Body.Close()
+			}()
+
+			var result struct {
+				Values []bitbucket.Repository `json:"values"`
+				Next   string                 `json:"next"`
+			}
+
+			if err := decodeResponse(resp, &result); err != nil {
+				return "", err
+			}
+
+			for _, repo := range result.Values {
+				d.StreamListItem(ctx, repo)
+				if d.RowsRemaining(ctx) == 0 {
+					return "", nil
+				}
+			}
+
+			return result.Next, nil
+		}(url)
+
 		if err != nil {
 			return nil, err
 		}
-
-		var result struct {
-			Values []bitbucket.Repository `json:"values"`
-			Next   string                 `json:"next"`
+		if nextURL == "" && d.RowsRemaining(ctx) == 0 {
+			return nil, nil
 		}
-
-		if err := decodeResponse(resp, &result); err != nil {
-			resp.Body.Close()
-			return nil, err
-		}
-		resp.Body.Close()
-
-		for _, repo := range result.Values {
-			d.StreamListItem(ctx, repo)
-			if d.RowsRemaining(ctx) == 0 {
-				return nil, nil
-			}
-		}
-
-		url = result.Next
+		url = nextURL
 	}
 
 	return nil, nil
