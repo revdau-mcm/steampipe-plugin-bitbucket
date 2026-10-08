@@ -48,7 +48,7 @@ func connect(_ context.Context, d *plugin.QueryData) *bitbucket.Client {
 		// They must be sent as Basic Auth: username:api_token.
 		// If a username is supplied alongside the token, use Basic Auth.
 		// Otherwise fall back to Bearer (for true OAuth tokens / Bitbucket Server PATs).
-		if username != "" {
+		if username != "" && !strings.Contains(username, "@") {
 			client = bitbucket.NewBasicAuth(username, token)
 		} else {
 			client = bitbucket.NewOAuthbearerToken(token)
@@ -132,7 +132,7 @@ func makeBitbucketRequest(ctx context.Context, d *plugin.QueryData, url string) 
 
 	cfg := GetConfig(d.Connection)
 	if cfg.Token != nil && *cfg.Token != "" {
-		if cfg.Username != nil && *cfg.Username != "" {
+		if cfg.Username != nil && *cfg.Username != "" && !strings.Contains(*cfg.Username, "@") {
 			// Atlassian API tokens must be used as Basic Auth: username:token
 			raw := *cfg.Username + ":" + *cfg.Token
 			req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(raw)))
