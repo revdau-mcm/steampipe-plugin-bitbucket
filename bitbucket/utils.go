@@ -44,13 +44,13 @@ func connect(_ context.Context, d *plugin.QueryData) *bitbucket.Client {
 
 	var client *bitbucket.Client
 	if token != "" {
-		// Atlassian API tokens are NOT OAuth Bearer tokens.
-		// They must be sent as Basic Auth: username:api_token.
-		// If a username is supplied alongside the token, use Basic Auth.
-		// Otherwise fall back to Bearer (for true OAuth tokens / Bitbucket Server PATs).
-		if username != "" && !strings.Contains(username, "@") {
+		if username != "" {
+			// username+token: always use Basic Auth.
+			// Atlassian API tokens (ATBB...) are not OAuth Bearer tokens — they require
+			// Basic Auth (username:token) even when the username is an email address.
 			client = bitbucket.NewBasicAuth(username, token)
 		} else {
+			// token-only with no username: treat as OAuth Bearer (e.g. Bitbucket Server PATs)
 			client = bitbucket.NewOAuthbearerToken(token)
 		}
 	} else {

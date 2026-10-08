@@ -102,13 +102,15 @@ func tableBitbucketMyWorkspaceList(ctx context.Context, d *plugin.QueryData, _ *
 		baseURL = strings.TrimRight(*cfg.BaseUrl, "/")
 	}
 
-	// Build auth header: prefer API Token (Bearer), fall back to Basic Auth
+	// Build auth header: prefer Basic Auth (username:password) for Atlassian API tokens (ATBB...),
+	// fall back to Bearer only when a raw OAuth token is configured with no username.
 	authHeader := ""
-	if cfg.Token != nil && *cfg.Token != "" {
-		authHeader = "Bearer " + *cfg.Token
-	} else if cfg.Username != nil && cfg.Password != nil {
+	if cfg.Username != nil && cfg.Password != nil && *cfg.Username != "" && *cfg.Password != "" {
 		raw := *cfg.Username + ":" + *cfg.Password
 		authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(raw))
+	} else if cfg.Token != nil && *cfg.Token != "" {
+		// Only true OAuth bearer tokens (Bitbucket Server PATs) should reach here.
+		authHeader = "Bearer " + *cfg.Token
 	}
 
 	seen := map[string]bool{}
