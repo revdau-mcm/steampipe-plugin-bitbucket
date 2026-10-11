@@ -102,12 +102,23 @@ func tableBitbucketMyWorkspaceList(ctx context.Context, d *plugin.QueryData, _ *
 		baseURL = strings.TrimRight(*cfg.BaseUrl, "/")
 	}
 
-	// Build auth header: prefer Basic Auth (username:password) for Atlassian API tokens (ATBB...),
-	// fall back to Bearer only when a raw OAuth token is configured with no username.
+	// Build auth header:
+	//   1. username + password  → Basic Auth (legacy app passwords)
+	//   2. username + token     → Basic Auth (Atlassian API tokens — ATBB/ATATT — must use Basic Auth)
+	//   3. token only           → Bearer    (true OAuth PATs, e.g. Bitbucket Server)
 	authHeader := ""
-	if cfg.Username != nil && cfg.Password != nil && *cfg.Username != "" && *cfg.Password != "" {
-		raw := *cfg.Username + ":" + *cfg.Password
-		authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(raw))
+	if cfg.Username != nil && *cfg.Username != "" {
+		var secret string
+		if cfg.Password != nil && *cfg.Password != "" {
+			secret = *cfg.Password
+		} else if cfg.Token != nil && *cfg.Token != "" {
+			// Atlassian API token supplied via the "token" field with a username — still Basic Auth.
+			secret = *cfg.Token
+		}
+		if secret != "" {
+			raw := *cfg.Username + ":" + secret
+			authHeader = "Basic " + base64.StdEncoding.EncodeToString([]byte(raw))
+		}
 	} else if cfg.Token != nil && *cfg.Token != "" {
 		// Only true OAuth bearer tokens (Bitbucket Server PATs) should reach here.
 		authHeader = "Bearer " + *cfg.Token
