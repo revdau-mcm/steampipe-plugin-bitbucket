@@ -131,18 +131,18 @@ func makeBitbucketRequest(ctx context.Context, d *plugin.QueryData, url string) 
 	}
 
 	cfg := GetConfig(d.Connection)
-	if cfg.Token != nil && *cfg.Token != "" {
-		if cfg.Username != nil && *cfg.Username != "" && !strings.Contains(*cfg.Username, "@") {
-			// Atlassian API tokens must be used as Basic Auth: username:token
-			raw := *cfg.Username + ":" + *cfg.Token
-			req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(raw)))
-		} else {
-			// True OAuth Bearer token (Bitbucket Server PATs, etc.)
-			req.Header.Set("Authorization", "Bearer "+*cfg.Token)
-		}
-	} else if cfg.Username != nil && cfg.Password != nil {
-		raw := *cfg.Username + ":" + *cfg.Password
+	var secret string
+	if cfg.Password != nil && *cfg.Password != "" {
+		secret = *cfg.Password
+	} else if cfg.Token != nil && *cfg.Token != "" {
+		secret = *cfg.Token
+	}
+
+	if cfg.Username != nil && *cfg.Username != "" && secret != "" {
+		raw := *cfg.Username + ":" + secret
 		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(raw)))
+	} else if cfg.Token != nil && *cfg.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+*cfg.Token)
 	}
 	req.Header.Set("Accept", "application/json")
 
