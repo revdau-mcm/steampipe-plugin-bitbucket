@@ -2,7 +2,9 @@ package bitbucket
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -19,14 +21,17 @@ const (
 
 //// HELPER FUNCTIONS
 
-// create service client
 func connect(_ context.Context, d *plugin.QueryData) *bitbucket.Client {
 	username := os.Getenv("BITBUCKET_USERNAME")
 	password := os.Getenv("BITBUCKET_PASSWORD")
+	token := os.Getenv("BITBUCKET_TOKEN")
 	baseurl := os.Getenv("BITBUCKET_API_BASE_URL")
 
 	// Get connection config for plugin
 	bitbucketConfig := GetConfig(d.Connection)
+	if bitbucketConfig.Token != nil {
+		token = *bitbucketConfig.Token
+	}
 	if bitbucketConfig.Username != nil {
 		username = *bitbucketConfig.Username
 	}
@@ -37,14 +42,26 @@ func connect(_ context.Context, d *plugin.QueryData) *bitbucket.Client {
 		baseurl = *bitbucketConfig.BaseUrl
 	}
 
-	if username == "" {
-		panic("'username' must be set in the connection configuration. Edit your connection configuration file and then restart Steampipe")
+	var client *bitbucket.Client
+	if token != "" {
+		if username != "" {
+			// username+token: always use Basic Auth.
+			// Atlassian API tokens (ATBB...) are not OAuth Bearer tokens — they require
+			// Basic Auth (username:token) even when the username is an email address.
+			client = bitbucket.NewBasicAuth(username, token)
+		} else {
+			// token-only with no username: treat as OAuth Bearer (e.g. Bitbucket Server PATs)
+			client = bitbucket.NewOAuthbearerToken(token)
+		}
+	} else {
+		if username == "" {
+			panic("'username' must be set in the connection configuration if 'token' is not set. Edit your connection configuration file and then restart Steampipe")
+		}
+		if password == "" {
+			panic("'password' must be set in the connection configuration if 'token' is not set. Edit your connection configuration file and then restart Steampipe")
+		}
+		client = bitbucket.NewBasicAuth(username, password)
 	}
-	if password == "" {
-		panic("'password' must be set in the connection configuration. Edit your connection configuration file and then restart Steampipe")
-	}
-
-	client := bitbucket.NewBasicAuth(username, password)
 
 	// For private bitbucket setup
 	if baseurl != "" {
@@ -105,3 +122,39 @@ type ListResponse struct {
 	Next     string `json:"next,omitempty"`
 	Previous string `json:"previous,omitempty"`
 }
+
+// makeBitbucketRequest builds and executes an authenticated HTTP request.
+func makeBitbucketRequest(ctx context.Context, d *plugin.QueryData, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := GetConfig(d.Connection)
+	var secret string
+	if cfg.Password != nil && *cfg.Password != "" {
+		secret = *cfg.Password
+	} else if cfg.Token != nil && *cfg.Token != "" {
+		secret = *cfg.Token
+	}
+
+	if cfg.Username != nil && *cfg.Username != "" && secret != "" {
+		raw := *cfg.Username + ":" + secret
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(raw)))
+	} else if cfg.Token != nil && *cfg.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+*cfg.Token)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	client := connect(ctx, d)
+	resp, err := client.HttpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return resp, nil
+}
+

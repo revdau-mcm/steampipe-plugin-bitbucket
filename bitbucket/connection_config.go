@@ -5,9 +5,11 @@ import (
 )
 
 type bitbucketConfig struct {
-	Username *string `hcl:"username"`
-	Password *string `hcl:"password"`
-	BaseUrl  *string `hcl:"base_url"`
+	Token      *string   `hcl:"token"`
+	Username   *string   `hcl:"username"`
+	Password   *string   `hcl:"password"`
+	BaseUrl    *string   `hcl:"base_url,optional"`
+	Workspaces []string  `hcl:"workspaces,optional"`
 }
 
 func ConfigInstance() interface{} {
